@@ -1,0 +1,160 @@
+---
+title: "Untitled"
+author: "Thomas Sato"
+date: "2023-05-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytext)
+library(gutenbergr)
+library(stringi)
+```
+
+This is the initial code that was used before automation, just to make sure that most of it was doable with one of Shakespeare's plays (Measure for Measure in particular). Some of the code for the visualizations are also included here.
+
+
+Importing the datasets from gutenbergr
+```{r}
+shakespeare <- gutenberg_works(author == "Shakespeare, William")
+
+IDs = shakespeare[shakespeare$title == "Measure for Measure" |
+                  shakespeare$title == "The Taming of the Shrew",]$gutenberg_id
+
+MeasureForMeasure <- gutenberg_download(1530)
+MeasureForMeasure <- gutenberg_download(1508)
+```
+
+Getting rid of stage directions & blank space
+```{r}
+# The regular expression ^\\[.*\\]$ searches for any string in the text where it starts with an open bracket and ends with a close bracket
+lgl_stage_dir <- str_detect(MeasureForMeasure$text, "^\\[.*\\]$")
+
+MeasureForMeasure <- mutate(MeasureForMeasure, row = row_number())
+indices <- which(lgl_stage_dir)
+
+# Gets rid of the stage directions and the line before and after the stage directions
+for (index in indices) {
+  MeasureForMeasure <- subset(MeasureForMeasure, !(row == index))
+}
+
+MeasureForMeasure <- filter(MeasureForMeasure, text != "")
+```
+
+Indexing each line of the play by paragraph to be able to group later on
+```{r}
+index <- 0
+for (i in 1:length(MeasureForMeasure$text)) {
+  if (!str_detect(MeasureForMeasure$text[i], "[[:lower:]]")) {
+    index <- index + 1
+  }
+  MeasureForMeasure[i, 4] <- index
+}
+names(MeasureForMeasure)[4] <- "paragraph"
+```
+
+Grouping by paragraph, then transposing to make it a column vector
+```{r, warning = FALSE}
+MeasureForMeasuret <- t(pivot_wider(MeasureForMeasure[, -c(1, 3)],
+                                    names_from = paragraph,
+                                    values_from = text))
+```
+
+Joining each group together in order to get paragraphs for each character
+```{r, warning = FALSE}
+MeasureForMeasure_text <- data.frame(lapply(list(MeasureForMeasuret), stri_join_list, sep = " "))
+MeasureForMeasure_text <- data.frame(lapply(MeasureForMeasure_text, trimws, which = "left"))
+names(MeasureForMeasure_text)[1] <- "paragraph"
+
+#MeasureForMeasure <- filter(MeasureForMeasure, !str_detect(text, "^SCENE|^Scene|\\["))
+
+row <- ""
+M4M_vector <- MeasureForMeasure_text$paragraph
+while (!str_detect(row, "^ACT")) {
+  M4M_vector <- M4M_vector[-1]
+  row <- M4M_vector[1]
+}
+
+M4M <- data.frame(M4M_vector)
+M4M <- M4M %>%
+  separate(col = M4M_vector, sep = "\\. ", into = c("character", "text"), extra = "merge") %>%
+  na.omit()
+
+M4M <- filter(M4M, !str_detect(character, "^ACT"))
+```
+
+Now unnest tokens and join sentiment lexicon together
+```{r}
+M4M_tokens <- unnest_tokens(M4M, word, text)
+M4M_sentiment <- inner_join(M4M_tokens, get_sentiments("nrc"), relationship = "many-to-many")
+
+n_words <- M4M_sentiment %>%
+  group_by(word, character) %>%
+  summarize(n = n()) %>%
+  group_by(character) %>%
+  summarize(n = n())
+
+M4M_sentiment <- inner_join(filter(n_words, n > 15), M4M_sentiment)
+```
+
+Plotting by character in Measure for Measure the sentiments of each
+```{r}
+M4M_sentiment <- M4M_sentiment %>%
+  filter(!(sentiment %in% c("positive", "negative"))) %>%
+  group_by(character) %>%
+  count(sentiment) %>%
+  mutate(perc = 100 * n / sum(n))
+
+ggplot(M4M_sentiment) +
+  geom_col(aes(sentiment, perc), fill = "green4", color = "black") +
+  facet_wrap(~ character) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "Sentiment", y = "Percentage", title = "Sentiments of all characters in {play}")
+```
+
+Total Variation Distance function
+```{r}
+TVD <- function(mu, nu) {
+  0.5 * sum(abs(mu - nu))
+}
+```
+
+Calculating TVD matrix
+```{r}
+tvdmatrix <- data.frame()
+
+charactersentiments <- pivot_wider(M4M_sentiment[, c(1, 4)],
+                                   names_from = character,
+                                   values_from = perc)
+
+for (i in 1:length(unique(M4M_sentiment$character))) {
+  for (j in 1:length(unique(M4M_sentiment$character))) {
+    tvdmatrix[i, j] <- TVD(unlist(charactersentiments[[i]]),
+                           unlist(charactersentiments[[i]]))
+  }
+}
+```
+
+
+
+
+
+
+```{r}
+nrc %>%
+  count(sentiment) %>%
+  filter(!(sentiment %in% c("positive", "negative"))) %>%
+  mutate(Percentage = n / sum(n)) %>%
+  ggplot() +
+    geom_col(aes(sentiment, Percentage), fill = "black") +
+    theme_bw() +
+    labs(x = "Sentiment", title = "Sentiment in the NRC Lexicon") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+    
+```
+
+

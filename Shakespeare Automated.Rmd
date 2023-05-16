@@ -1,0 +1,158 @@
+---
+title: "Untitled"
+author: "Thomas Sato"
+date: "2023-05-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytext)
+library(gutenbergr)
+library(stringi)
+```
+
+The heavy lifting and data transformation is done in this function-- takes the name of a play as a parameter.
+```{r}
+shakespeare <- gutenberg_works(author == "Shakespeare, William")
+
+text_transformation <- function(play) {
+  
+  ID <- shakespeare[shakespeare$title == play,]$gutenberg_id
+  play <- gutenberg_download(ID)
+  
+  lgl_stage_dir <- str_detect(play$text, "^\\[.*\\]$")
+  
+  play <- mutate(play, row = row_number())
+  indices <- which(lgl_stage_dir)
+  
+  for (index in indices) {
+    play <- subset(play, !(row == index))
+  }
+
+  play <- filter(play, text != "")
+  
+  index <- 0
+  for (i in 1:length(play$text)) {
+    if (!str_detect(play$text[i], "[[:lower:]]")) {
+      index <- index + 1
+    }
+    play[i, 4] <- index
+  }
+  names(play)[4] <- "paragraph"
+  
+  play <- t(pivot_wider(play[, -c(1, 3)],
+                        names_from = paragraph,
+                        values_from = text))
+  
+  play_text <- data.frame(lapply(list(play),
+                                 stri_join_list,
+                                 sep = " "))
+  play_text <- data.frame(lapply(play_text,
+                                 trimws,
+                                 which = "left"))
+  names(play_text)[1] <- "paragraph"
+  
+  row <- ""
+  play_vector <- play_text$paragraph
+  while (!str_detect(row, "^ACT")) {
+    play_vector <- play_vector[-1]
+    row <- play_vector[1]
+  }
+  
+  play_paragraphs <- data.frame(play_vector)
+  play_paragraphs <- play_paragraphs %>%
+    separate(col = play_vector,
+             sep = "\\. ",
+             into = c("character", "text"),
+             extra = "merge") %>%
+    na.omit()
+  
+  play_paragraphs <- filter(play_paragraphs, !str_detect(character, "^ACT"))
+  
+  play_tokens <- unnest_tokens(play_paragraphs, word, text)
+  play_sentiment <- inner_join(play_tokens, get_sentiments("nrc"),
+                               relationship = "many-to-many")
+  
+  n_words <- play_sentiment %>%
+    group_by(word, character) %>%
+    summarize(n = n()) %>%
+    group_by(character) %>%
+    summarize(n = n())
+  
+  play_sentiment <- inner_join(filter(n_words, n > 15), play_sentiment)
+  
+  play_sentiment <- play_sentiment %>%
+    filter(!(sentiment %in% c("positive", "negative"))) %>%
+    group_by(character) %>%
+    count(sentiment) %>%
+    mutate(perc = 100 * n / sum(n))
+  
+}
+```
+
+Total Variation Distance function
+```{r}
+TVD <- function(mu, nu) {
+  0.5 * sum(abs(mu - nu))
+}
+```
+
+Automated in one big function! Takes two parameters-- both are strings, and the titles of the plays to be compared.
+```{r}
+shakespearecomparison <- function(play1, play2) {
+  suppressWarnings({ suppressMessages({
+  
+    text1 <- text_transformation(play1)
+    text2 <- text_transformation(play2)
+    
+    tvdmatrix <- data.frame()
+  
+    charactersentiments1 <- pivot_wider(text1[, c(1, 4)],
+                                       names_from = character,
+                                       values_from = perc)
+    charactersentiments2 <- pivot_wider(text2[, c(1, 4)],
+                                       names_from = character,
+                                       values_from = perc)
+    
+    for (i in 1:length(unique(text1$character))) {
+      for (j in 1:length(unique(text2$character))) {
+        tvdmatrix[i, j] <- TVD(unlist(charactersentiments1[[i]]),
+                               unlist(charactersentiments2[[j]]))
+      }
+    }
+    
+    colnames(tvdmatrix) <- colnames(charactersentiments2)
+    rownames(tvdmatrix) <- colnames(charactersentiments1)
+    
+    return(tvdmatrix)
+    
+  }) })
+}
+```
+
+TEST
+```{r, warning = FALSE}
+View(shakespearecomparison("Measure for Measure", "The Taming of the Shrew"))
+```
+
+```{r}
+charmatrix <- shakespearecomparison("Measure for Measure", "The Taming of the Shrew")
+
+if (nrow(charmatrix) > ncol(charmatrix)) {
+  charmatrix <- t(charmatrix)
+} 
+
+reduction <- charmatrix
+matches <- c()
+for (i in 1:(nrow(charmatrix) - 1)) {
+  mat <- which(reduction == min(reduction), arr.ind = TRUE)
+  matches[i] <- paste(rownames(reduction)[mat[, 1]], "|", colnames(reduction)[mat[, 2]])
+  reduction <- reduction[-mat[, 1], -mat[, 2]]
+}
+
+matches # FINAL RESULT
+```
+

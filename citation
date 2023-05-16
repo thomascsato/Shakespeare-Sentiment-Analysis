@@ -1,0 +1,40 @@
+Some Citataion Details (More included in the paper.)
+
+nrc lexicon:
+
+This dataset was published in Saif M. Mohammad and Peter Turney. (2013), ``Crowdsourcing a Word-Emotion Association Lexicon.'' Computational Intelligence, 29(3): 436-465.
+
+article{mohammad13,
+author = {Mohammad, Saif M. and Turney, Peter D.},
+title = {Crowdsourcing a Word-Emotion Association Lexicon},
+journal = {Computational Intelligence},
+volume = {29},
+number = {3},
+pages = {436-465},
+doi = {10.1111/j.1467-8640.2012.00460.x},
+url = {https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-8640.2012.00460.x},
+eprint = {https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1467-8640.2012.00460.x},
+year = {2013}
+}
+
+
+
+R Lexicons Documentation
+https://cran.rstudio.com/web/packages/lexicon/lexicon.pdf
+
+
+nrc EmoLex
+https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm#:~:text=The%20NRC%20Emotion%20Lexicon%20is,sentiments%20(negative%20and%20positive).
+
+
+NRC Original Research Article in my files:
+file:///C:/Users/thoma/Downloads/word-emotion-lexicon.pdf
+
+
+@Manual{,
+    title = {gutenbergr: Download and Process Public Domain Works from Project Gutenberg},
+    author = {Myfanwy Johnston and David Robinson},
+    year = {2022},
+    note = {R package version 0.2.3},
+    url = {https://CRAN.R-project.org/package=gutenbergr},
+  }
